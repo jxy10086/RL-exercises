@@ -22,6 +22,8 @@ from rl_exercises.agent.buffer import SimpleBuffer
 from rl_exercises.environments import MarsRover
 from rl_exercises.week_2.policy_iteration import PolicyIteration
 from rl_exercises.week_2.value_iteration import ValueIteration
+from rl_exercises.week_3 import EpsilonGreedyPolicy
+from rl_exercises.week_3.sarsa_qlearning import TDAgent
 
 # from rl_exercises.week_4 import EpsilonGreedyPolicy as TabularEpsilonGreedyPolicy
 # from rl_exercises.week_4 import SARSAAgent
@@ -66,6 +68,23 @@ def train(cfg: DictConfig) -> float:
         agent = PolicyIteration(env=env, **cfg.agent_kwargs)
     elif cfg.agent == "value_iteration":
         agent = ValueIteration(env=env, **cfg.agent_kwargs)
+    elif cfg.agent == "sarsa":
+        policy = EpsilonGreedyPolicy(env=env, epsilon=0.1, seed=cfg.seed)
+        agent = TDAgent(
+            env=env,
+            policy=policy,
+            algorithm="sarsa",
+            **cfg.agent_kwargs,
+        )
+
+    elif cfg.agent == "qlearning":
+        policy = EpsilonGreedyPolicy(env=env, epsilon=0.1, seed=cfg.seed)
+        agent = TDAgent(
+            env=env,
+            policy=policy,
+            algorithm="qlearning",
+            **cfg.agent_kwargs,
+        )
     else:
         raise NotImplementedError(f"Unknown agent: {cfg.agent}")
 
