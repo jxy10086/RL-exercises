@@ -1,0 +1,13 @@
+See width.png for width experiments.
+
+Increasing the network width generally improved learning performance. The width=64 configuration achieved the best final reward and showed relatively stable convergence. The width=32 model learned more slowly and showed larger performance fluctuations near the end of training. Increasing the width to 128 did not significantly outperform width=64, suggesting diminishing returns for larger networks on CartPole-v1.
+
+See batch_size.png for batch size experiments.
+
+Batch size had a noticeable impact on training stability. Batch size 32 achieved the best overall performance and the smoothest learning curve. Batch size 16 learned reasonably well but showed larger fluctuations during training. Batch size 64 appeared more stable early on but converged to a lower final reward, likely because larger batches reduce update frequency and slow adaptation.
+
+See buffer_size.png for replay buffer experiments.
+
+Replay buffer size also affected training stability and performance. The replay buffer size of 10000 achieved the best final reward and the most stable learning behavior. A very small replay buffer (1000) caused unstable learning and sudden performance drops, likely due to reduced diversity in sampled experiences. The medium buffer size (5000) achieved moderate performance but was less stable than the larger replay buffer.
+
+The experiments demonstrate that DQN performance is sensitive to hyperparameter choices such as network width, batch size, and replay buffer capacity. Moderate network size, medium batch size, and sufficiently large replay buffers produced the best overall performance.

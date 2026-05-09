@@ -24,6 +24,7 @@ from rl_exercises.week_2.policy_iteration import PolicyIteration
 from rl_exercises.week_2.value_iteration import ValueIteration
 from rl_exercises.week_3 import EpsilonGreedyPolicy
 from rl_exercises.week_3.sarsa_qlearning import TDAgent
+from rl_exercises.week_4 import DQN, ReplayBuffer
 
 # from rl_exercises.week_4 import EpsilonGreedyPolicy as TabularEpsilonGreedyPolicy
 # from rl_exercises.week_4 import SARSAAgent

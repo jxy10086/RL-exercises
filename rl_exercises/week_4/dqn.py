@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Tuple
 
 import gymnasium as gym
 import hydra
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
@@ -59,6 +60,7 @@ class DQNAgent(AbstractAgent):
         epsilon_decay: int = 500,
         target_update_freq: int = 1000,
         seed: int = 0,
+        hidden_dim: int = 64,
     ) -> None:
         """
         Initialize replay buffer, Q‐networks, optimizer, and hyperparameters.
@@ -105,8 +107,10 @@ class DQNAgent(AbstractAgent):
         n_actions = env.action_space.n
 
         # main Q‐network and frozen target
-        self.q = QNetwork(obs_dim, n_actions)
-        self.target_q = QNetwork(obs_dim, n_actions)
+        #        self.q = QNetwork(obs_dim, n_actions)
+        #        self.target_q = QNetwork(obs_dim, n_actions)
+        self.q = QNetwork(obs_dim, n_actions, hidden_dim)
+        self.target_q = QNetwork(obs_dim, n_actions, hidden_dim)
         self.target_q.load_state_dict(self.q.state_dict())
 
         self.optimizer = optim.Adam(self.q.parameters(), lr=lr)
@@ -134,7 +138,10 @@ class DQNAgent(AbstractAgent):
         # TODO: implement exponential‐decayin
         # ε = ε_final + (ε_start - ε_final) * exp(-total_steps / ε_decay)
         # Currently, it is constant and returns the starting value ε
-        return self.epsilon_start
+        # return self.epsilon_start
+        return self.epsilon_final + (self.epsilon_start - self.epsilon_final) * np.exp(
+            -self.total_steps / self.epsilon_decay
+        )
 
     def predict_action(
         self, state: np.ndarray, info: Dict[str, Any] = {}, evaluate: bool = False
@@ -162,16 +169,23 @@ class DQNAgent(AbstractAgent):
             # purely greedy
             t = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
             with torch.no_grad():
-                qvals = ...
-            action = None
+                # qvals = ...
+                qvals = self.q(t)
+            # action = None
+            action = int(torch.argmax(qvals, dim=1).item())
         else:
             # ε-greedy
             if np.random.rand() < self.epsilon():
                 # TODO: sample random action
-                action = None
+                # action = None
+                action = int(self.env.action_space.sample())
             else:
                 # TODO: select purely greedy action from Q(s)
-                action = None
+                # action = None
+                t = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
+                with torch.no_grad():
+                    qvals = self.q(t)
+                action = int(torch.argmax(qvals, dim=1).item())
 
         return action
 
@@ -231,11 +245,14 @@ class DQNAgent(AbstractAgent):
 
         # current Q estimates for taken actions
         # TODO: pass batched states through self.q and gather Q(s,a)
-        pred = ...
+        # pred = ...
+        pred = self.q(s).gather(1, a).squeeze(1)
 
         # TODO: compute TD target with frozen network
         with torch.no_grad():
-            target = ...
+            # target = ...
+            next_q = self.target_q(s_next).max(dim=1).values
+            target = r + self.gamma * (1.0 - mask) * next_q
 
         loss = nn.MSELoss()(pred, target)
 
@@ -266,6 +283,9 @@ class DQNAgent(AbstractAgent):
         ep_reward = 0.0
         recent_rewards: List[float] = []
 
+        frame_history = []
+        reward_history = []
+
         for frame in range(1, num_frames + 1):
             action = self.predict_action(state)
             next_state, reward, done, truncated, _ = self.env.step(action)
@@ -278,7 +298,8 @@ class DQNAgent(AbstractAgent):
             # update if ready
             if len(self.buffer) >= self.batch_size:
                 # TODO: sample batch from replay buffer
-                batch = ...
+                # batch = ...
+                batch = self.buffer.sample(self.batch_size)
                 _ = self.update_agent(batch)
 
             if done or truncated:
@@ -288,12 +309,25 @@ class DQNAgent(AbstractAgent):
                 # logging
                 if len(recent_rewards) % 10 == 0:
                     # TODO: compute avg over last eval_interval episodes and print
-                    avg = ...
+                    # avg = ...
+                    avg = np.mean(recent_rewards[-10:])
+
+                    frame_history.append(frame)
+                    reward_history.append(avg)
+
                     print(
                         f"Frame {frame}, AvgReward(10): {avg:.2f}, ε={self.epsilon():.3f}"
                     )
 
+        #        plt.plot(frame_history, reward_history)
+        #        plt.xlabel("Frames")
+        #        plt.ylabel("Mean Reward")
+        #        plt.title("DQN Training Curve")
+        #        plt.savefig("dqn_curve.png")
+        #        plt.show()
+
         print("Training complete.")
+        return frame_history, reward_history
 
 
 @hydra.main(config_path="../configs/agent/", config_name="dqn", version_base="1.1")
@@ -303,11 +337,164 @@ def main(cfg: DictConfig):
     set_seed(env, cfg.seed)
 
     # 2) TODO: map config → agent kwargs
-    agent_kwargs = dict(...)
-
+    # agent_kwargs = dict(...)
+    #    agent_kwargs = dict(
+    #        env=env,
+    #        buffer_capacity=cfg.agent.buffer_capacity,
+    #        batch_size=cfg.agent.batch_size,
+    #        lr=cfg.agent.learning_rate,
+    #        gamma=cfg.agent.gamma,
+    #        epsilon_start=cfg.agent.epsilon_start,
+    #        epsilon_final=cfg.agent.epsilon_final,
+    #        epsilon_decay=cfg.agent.epsilon_decay,
+    #        target_update_freq=cfg.agent.target_update_freq,
+    #        seed=cfg.seed,
+    #    )
     # 3) TODO:instantiate & train
-    agent = ...
-    agent.train(...)
+    #    agent = ...
+    #    agent.train(...)
+    #    agent = DQNAgent(**agent_kwargs)
+    #    agent.train(
+    #        num_frames=cfg.train.num_frames,
+    #        eval_interval=cfg.train.eval_interval,
+    #    )
+    results = {}
+
+    for hidden_dim in [32, 64, 128]:
+        env = gym.make(cfg.env.name)
+
+        agent = DQNAgent(
+            env,
+            hidden_dim=hidden_dim,
+            batch_size=cfg.agent.batch_size,
+            buffer_capacity=cfg.agent.buffer_capacity,
+            lr=cfg.agent.learning_rate,
+            gamma=cfg.agent.gamma,
+            epsilon_start=cfg.agent.epsilon_start,
+            epsilon_final=cfg.agent.epsilon_final,
+            epsilon_decay=cfg.agent.epsilon_decay,
+            target_update_freq=cfg.agent.target_update_freq,
+            seed=cfg.seed,
+        )
+
+        frames, rewards = agent.train(
+            num_frames=cfg.train.num_frames,
+            eval_interval=cfg.train.eval_interval,
+        )
+
+        results[f"width={hidden_dim}"] = (frames, rewards)
+
+    plt.figure(figsize=(8, 5))
+
+    for label, (frames, rewards) in results.items():
+        plt.plot(frames, rewards, label=label)
+
+    plt.xlabel("Frames")
+    plt.ylabel("Mean Reward")
+    plt.title("DQN Width Comparison")
+
+    plt.legend()
+
+    plt.savefig("width_compare.png")
+    plt.show()
+
+    # =====================================================
+
+    # BATCH SIZE COMPARISON
+
+    # =====================================================
+
+    results = {}
+
+    for batch_size in [16, 32, 64]:
+        env = gym.make(cfg.env.name)
+
+        agent = DQNAgent(
+            env,
+            hidden_dim=64,
+            batch_size=batch_size,
+            buffer_capacity=cfg.agent.buffer_capacity,
+            lr=cfg.agent.learning_rate,
+            gamma=cfg.agent.gamma,
+            epsilon_start=cfg.agent.epsilon_start,
+            epsilon_final=cfg.agent.epsilon_final,
+            epsilon_decay=cfg.agent.epsilon_decay,
+            target_update_freq=cfg.agent.target_update_freq,
+            seed=cfg.seed,
+        )
+
+        frames, rewards = agent.train(
+            num_frames=cfg.train.num_frames,
+            eval_interval=cfg.train.eval_interval,
+        )
+
+        results[f"batch={batch_size}"] = (frames, rewards)
+
+    plt.figure(figsize=(8, 5))
+
+    for label, (frames, rewards) in results.items():
+        plt.plot(frames, rewards, label=label)
+
+    plt.xlabel("Frames")
+
+    plt.ylabel("Mean Reward")
+
+    plt.title("DQN Batch Size Comparison")
+
+    plt.legend()
+
+    plt.savefig("batch_compare.png")
+
+    plt.show()
+
+    # =====================================================
+
+    # REPLAY BUFFER COMPARISON
+
+    # =====================================================
+
+    results = {}
+
+    for buffer_capacity in [1000, 5000, 10000]:
+        env = gym.make(cfg.env.name)
+
+        agent = DQNAgent(
+            env,
+            hidden_dim=64,
+            batch_size=cfg.agent.batch_size,
+            buffer_capacity=buffer_capacity,
+            lr=cfg.agent.learning_rate,
+            gamma=cfg.agent.gamma,
+            epsilon_start=cfg.agent.epsilon_start,
+            epsilon_final=cfg.agent.epsilon_final,
+            epsilon_decay=cfg.agent.epsilon_decay,
+            target_update_freq=cfg.agent.target_update_freq,
+            seed=cfg.seed,
+        )
+
+        frames, rewards = agent.train(
+            num_frames=cfg.train.num_frames,
+            eval_interval=cfg.train.eval_interval,
+        )
+
+        results[f"buffer={buffer_capacity}"] = (frames, rewards)
+
+    plt.figure(figsize=(8, 5))
+
+    for label, (frames, rewards) in results.items():
+        plt.plot(frames, rewards, label=label)
+
+    plt.xlabel("Frames")
+
+    plt.ylabel("Mean Reward")
+
+    plt.title("DQN Replay Buffer Comparison")
+
+    plt.legend()
+
+    plt.savefig("buffer_compare.png")
+
+    plt.show()
 
 
 if __name__ == "__main__":
