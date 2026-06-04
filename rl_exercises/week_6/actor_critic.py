@@ -9,6 +9,7 @@ from typing import Any, List, Tuple
 import gymnasium as gym
 import hydra
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -51,6 +52,10 @@ class ActorCriticAgent(AbstractAgent):
         self.baseline_type = baseline_type
         self.baseline_decay = baseline_decay
 
+        self.eval_steps = []
+        self.eval_returns = []
+        self.seed = seed
+
         # policy
         self.policy = Policy(env.observation_space, env.action_space, hidden_size)
         self.policy_optimizer = optim.Adam(self.policy.parameters(), lr=lr_actor)
@@ -87,15 +92,23 @@ class ActorCriticAgent(AbstractAgent):
         self, states: List[np.ndarray], rewards: List[float]
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # TODO: convert rewards into discounted returns
+        returns = self.compute_returns(rewards)
 
         # TODO: convert states list into a torch batch and compute state-values
+        states_t = torch.stack([torch.from_numpy(s).float() for s in states])
+
+        values = self.value_fn(states_t)
 
         # TODO: compute raw advantages = returns - values
-
+        advantages = returns - values.detach()
         # TODO: normalize advantages to zero mean and unit variance and use 1e-8 for numerical stability
+        advantages = (advantages - advantages.mean()) / (
+            advantages.std(unbiased=False) + 1e-8
+        )
 
         # return normalized advantages and returns
-        return None  # template placeholder
+        # return None  # template placeholder
+        return advantages, returns
 
     def compute_gae(
         self,
@@ -105,18 +118,51 @@ class ActorCriticAgent(AbstractAgent):
         dones: List[bool],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # TODO: compute values and next_values using your value_fn
+        states_t = torch.stack([torch.from_numpy(s).float() for s in states])
+
+        next_states_t = torch.stack([torch.from_numpy(s).float() for s in next_states])
+
+        values = self.value_fn(states_t)
+        next_values = self.value_fn(next_states_t)
 
         # TODO: compute deltas: one-step TD errors
+        rewards_t = torch.tensor(rewards, dtype=torch.float32)
+
+        dones_t = torch.tensor(dones, dtype=torch.float32)
+
+        deltas = rewards_t + self.gamma * next_values * (1.0 - dones_t) - values
 
         # TODO: accumulate GAE advantages backwards
 
+        gae = 0
+        advantages = []
+
+        for delta, done in zip(
+            reversed(deltas),
+            reversed(dones_t),
+        ):
+            gae = delta + self.gamma * self.gae_lambda * (1.0 - done) * gae
+
+            advantages.insert(0, gae)
+
+        advantages = torch.stack(advantages)
+
         # TODO: compute returns using advantages and values
 
+        returns = advantages + values.detach()
+
         # TODO: normalize advantages to zero mean and unit variance and use 1e-8 for numerical stability
+        advantages = (advantages - advantages.mean()) / (
+            advantages.std(unbiased=False) + 1e-8
+        )
 
         # TODO: advantages, returns  # replace with actual values (detach both to avoid re-entering the graph)
 
-        return None  # template placeholder
+        # return None  # template placeholder
+        return (
+            advantages.detach(),
+            returns.detach(),
+        )
 
     def update_agent(
         self,
@@ -135,13 +181,19 @@ class ActorCriticAgent(AbstractAgent):
             ret = self.compute_returns(list(rewards))
 
             # TODO: compute advantages by subtracting running return
-            adv = ...  # template placeholder
+            # adv = ...  # template placeholder
+            adv = ret - self.running_return
 
             # TODO: normalize advantages to zero mean and unit variance and use 1e-8 for numerical stability
             # (Reminder, use unbiased=False for torch tensors)
+            adv = (adv - adv.mean()) / (adv.std(unbiased=False) + 1e-8)
 
             # TODO: update running return using baseline decay
             # (x = baseline_decay * x + (1 - baseline_decay) * mean return)
+            self.running_return = (
+                self.baseline_decay * self.running_return
+                + (1 - self.baseline_decay) * ret.mean().item()
+            )
         else:
             ret = self.compute_returns(list(rewards))
             adv = (ret - ret.mean()) / (ret.std(unbiased=False) + 1e-8)
@@ -216,6 +268,10 @@ class ActorCriticAgent(AbstractAgent):
 
                 if step_count % eval_interval == 0:
                     mean_r, std_r = self.evaluate(eval_env, num_episodes=eval_episodes)
+
+                    self.eval_steps.append(step_count)
+                    self.eval_returns.append(mean_r)
+
                     print(
                         f"[Eval ] Step {step_count:6d} AvgReturn {mean_r:5.1f} ± {std_r:4.1f}"
                     )
@@ -225,6 +281,18 @@ class ActorCriticAgent(AbstractAgent):
             print(
                 f"[Train] Step {step_count:6d} Return {total_return:5.1f} Policy Loss {policy_loss:.3f} Value Loss {value_loss:.3f}"
             )
+
+        # print("Training complete.")
+        pd.DataFrame(
+            {
+                "steps": self.eval_steps,
+                "rewards": self.eval_returns,
+            }
+        ).to_csv(
+            # f"{self.baseline_type}.csv",
+            f"{self.baseline_type}_seed_{self.seed}.csv",
+            index=False,
+        )
 
         print("Training complete.")
 

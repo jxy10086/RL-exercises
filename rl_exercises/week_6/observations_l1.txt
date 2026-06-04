@@ -1,0 +1,75 @@
+Level 1 Observations: Actor-Critic Baselines
+
+The training curves are shown in actor_critic_baselines.png.
+
+Experimental Setup
+
+We compared four baseline strategies for on-policy Actor-Critic:
+
+- none (no baseline)
+- avg (running average baseline)
+- value (learned value function)
+- gae (Generalized Advantage Estimation)
+
+Experiments were conducted on LunarLander-v3 using three random seeds. Performance was evaluated every 10,000 environment steps and aggregated using the Interquartile Mean (IQM) metric with RLiable.
+
+Results
+
+All four methods were able to improve performance over training, indicating that the policy successfully learned useful behaviors.
+
+The value baseline achieved the most stable learning behavior and generally reached the highest final returns. The no-baseline method also performed surprisingly well and achieved returns close to the value baseline near the end of training.
+
+The running-average baseline showed larger performance fluctuations and occasionally suffered from severe performance drops. Its final performance was lower than the value baseline.
+
+Contrary to expectations, GAE did not outperform the value baseline in our experiments. Although GAE improved over time, its final performance was consistently lower than both the value baseline and the no-baseline method.
+
+Discussion
+
+No Baseline
+
+Without a baseline, the policy gradient estimator has the highest variance because the full return is used directly to update the policy.
+
+Theoretically, this should lead to slower and less stable learning. However, in our experiments the method still learned reasonable policies, suggesting that the environment was not difficult enough for variance alone to completely prevent learning.
+
+Running Average Baseline
+
+The running-average baseline subtracts a global estimate of the expected return.
+
+This reduces variance compared to the no-baseline case, but the baseline is not state-dependent. As a result, it cannot accurately reflect the quality of individual states, leading to less informative advantage estimates and slower learning.
+
+This is consistent with the larger fluctuations observed during training.
+
+Value Function Baseline
+
+The learned value function estimates the expected return of each state.
+
+Advantages are computed as:
+
+A(s,a) = G_t - V(s)
+
+This significantly reduces gradient variance while preserving useful learning signals. Because the baseline is state-dependent, it provides more accurate feedback to the actor than a simple running average.
+
+As expected, this approach produced the most stable learning curve and the strongest overall performance.
+
+Generalized Advantage Estimation (GAE)
+
+GAE introduces a bias-variance trade-off by combining multi-step temporal-difference errors:
+
+A_t^{GAE} = Σ (γλ)^l δ_{t+l}
+
+Theoretically, GAE should further reduce variance compared to Monte Carlo returns while introducing only a small amount of bias.
+
+However, in our experiments GAE did not outperform the value baseline. Possible explanations include:
+
+- The learning rates may not have been well tuned for GAE.
+- Only three random seeds were used, which may not be sufficient to obtain statistically robust results.
+- LunarLander-v3 has relatively noisy rewards, making performance sensitive to hyperparameter choices.
+- The actor-critic implementation updates only once per episode, which may limit the benefits typically obtained from GAE.
+
+Conclusion
+
+The value-function baseline provided the best balance between variance reduction and learning quality in our experiments.
+
+The running-average baseline reduced variance compared to no baseline but was less effective than a learned value function.
+
+Although GAE is theoretically expected to provide superior bias-variance trade-offs, this advantage was not observed under the current experimental settings. This highlights the importance of hyperparameter tuning and sufficient experimental repetitions when evaluating reinforcement learning algorithms.
